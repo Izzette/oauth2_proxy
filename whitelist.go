@@ -19,7 +19,7 @@ func NewIPWhitelist(nets []*net.IPNet) *IPWhitelist {
 			if netMap = w.getIP4NetMap(net.Mask); netMap == nil {
 				netMap = &ip4NetMap{
 					mask: net.Mask,
-					ips: map[[4]byte]bool{},
+					ips:  map[[4]byte]bool{},
 				}
 				w.ip4Whitelist = append(w.ip4Whitelist, netMap)
 			}
@@ -32,7 +32,7 @@ func NewIPWhitelist(nets []*net.IPNet) *IPWhitelist {
 			if netMap = w.getIP6NetMap(net.Mask); netMap == nil {
 				netMap = &ip16NetMap{
 					mask: net.Mask,
-					ips: map[[16]byte]bool{},
+					ips:  map[[16]byte]bool{},
 				}
 				w.ip6Whitelist = append(w.ip6Whitelist, netMap)
 			}

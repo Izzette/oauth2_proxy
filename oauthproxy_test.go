@@ -1515,25 +1515,25 @@ func TestIPWhitelist(t *testing.T) {
 
 	rw = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/", nil)
-	req.Header.Add("X-Real-IP", "127.0.0.1:1234")
+	req.Header.Add("X-Real-IP", "127.0.0.1")
 	proxy.ServeHTTP(rw, req)
 	assert.Equal(t, 404, rw.Code)
 
 	rw = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/", nil)
-	req.Header.Add("X-Real-IP", "[::1]:1234")
+	req.Header.Add("X-Forwarded-For", "::1")
 	proxy.ServeHTTP(rw, req)
 	assert.Equal(t, 404, rw.Code)
 
 	rw = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/", nil)
-	req.Header.Add("X-Real-IP", "12.34.56.78:1234")
+	req.Header.Add("X-Real-IP", "12.34.56.78")
 	proxy.ServeHTTP(rw, req)
 	assert.Equal(t, 403, rw.Code)
 
 	rw = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/", nil)
-	req.Header.Add("X-Real-IP", "[::2]:1234")
+	req.Header.Add("X-Real-IP", "::2")
 	proxy.ServeHTTP(rw, req)
 	assert.Equal(t, 403, rw.Code)
 }

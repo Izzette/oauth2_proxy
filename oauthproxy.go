@@ -621,7 +621,7 @@ func (p *OAuthProxy) IsWhitelistedIP(req *http.Request) bool {
 	remoteAddr, err := getRealIP(req)
 	if err != nil {
 		logger.Printf("Error obtaining real IP for whitelist: %s", err.Error())
-		// Possibly spoofed X-Real-IP header
+		// Possibly spoofed X-Real-IP or X-Forwarded-For headers
 		return false
 	}
 
@@ -641,19 +641,27 @@ func getRemoteAddr(req *http.Request) (s string) {
 }
 
 func getRealIP(req *http.Request) (*net.IP, error) {
-	realIP := req.Header.Get("X-Real-IP")
-	if realIP == "" {
-		return nil, nil
+	var ipStr string
+	if realIP := req.Header.Get("X-Real-IP"); realIP != "" {
+		ipStr = realIP
+	} else if forwardedFor := req.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+		ipStr = forwardedFor
+	} else {
+		splitIP, _, err := net.SplitHostPort(req.RemoteAddr)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to address (%s) from http.RemoteAddr", req.RemoteAddr)
+		}
+		ipStr = splitIP
 	}
 
-	host, _, err := net.SplitHostPort(realIP)
-	if err != nil {
-		return nil, err
+	if commaIndex := strings.IndexRune(ipStr, ','); commaIndex != -1 {
+		ipStr = ipStr[:commaIndex]
 	}
+	ipStr = strings.TrimSpace(ipStr)
 
-	ip := net.ParseIP(host)
+	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		return nil, fmt.Errorf("Unable to parse IP (%s) from X-Real-IP header", realIP)
+		return nil, fmt.Errorf("Unable to parse IP (%s) from X-Real-IP header", ipStr)
 	}
 
 	return &ip, nil
