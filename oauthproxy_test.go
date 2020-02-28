@@ -1499,3 +1499,41 @@ func TestFindJwtBearerToken(t *testing.T) {
 
 	fmt.Printf("%s", token)
 }
+
+func TestIPWhitelist(t *testing.T) {
+	opts := NewOptions()
+	opts.BypassIPWhitelist = []string{
+		"127.0.0.1",
+		"::1",
+	}
+	opts.Validate()
+
+	proxy := NewOAuthProxy(opts, func(string) bool { return true })
+
+	var rw *httptest.ResponseRecorder
+	var req *http.Request
+
+	rw = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/", nil)
+	req.Header.Add("X-Real-IP", "127.0.0.1:1234")
+	proxy.ServeHTTP(rw, req)
+	assert.Equal(t, 404, rw.Code)
+
+	rw = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/", nil)
+	req.Header.Add("X-Real-IP", "[::1]:1234")
+	proxy.ServeHTTP(rw, req)
+	assert.Equal(t, 404, rw.Code)
+
+	rw = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/", nil)
+	req.Header.Add("X-Real-IP", "12.34.56.78:1234")
+	proxy.ServeHTTP(rw, req)
+	assert.Equal(t, 403, rw.Code)
+
+	rw = httptest.NewRecorder()
+	req, _ = http.NewRequest("GET", "/", nil)
+	req.Header.Add("X-Real-IP", "[::2]:1234")
+	proxy.ServeHTTP(rw, req)
+	assert.Equal(t, 403, rw.Code)
+}

@@ -103,6 +103,7 @@ type OAuthProxy struct {
 	skipAuthPreflight    bool
 	skipJwtBearerTokens  bool
 	jwtBearerVerifiers   []*oidc.IDTokenVerifier
+	bypassIPWhitelist    *IPWhitelist
 	compiledRegex        []*regexp.Regexp
 	templates            *template.Template
 	Banner               string
@@ -256,6 +257,8 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		redirectURL.Path = fmt.Sprintf("%s/callback", opts.ProxyPrefix)
 	}
 
+	bypassIPWhitelist := NewIPWhitelist(opts.bypassIPWhitelist)
+
 	logger.Printf("OAuthProxy configured for %s Client ID: %s", opts.provider.Data().ProviderName, opts.ClientID)
 	refresh := "disabled"
 	if opts.CookieRefresh != time.Duration(0) {
@@ -297,6 +300,7 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		skipAuthPreflight:    opts.SkipAuthPreflight,
 		skipJwtBearerTokens:  opts.SkipJwtBearerTokens,
 		jwtBearerVerifiers:   opts.jwtBearerVerifiers,
+		bypassIPWhitelist:    bypassIPWhitelist,
 		compiledRegex:        opts.CompiledRegex,
 		SetXAuthRequest:      opts.SetXAuthRequest,
 		PassBasicAuth:        opts.PassBasicAuth,
@@ -596,7 +600,7 @@ func (p *OAuthProxy) IsValidRedirect(redirect string) bool {
 // IsWhitelistedRequest is used to check if auth should be skipped for this request
 func (p *OAuthProxy) IsWhitelistedRequest(req *http.Request) bool {
 	isPreflightRequestAllowed := p.skipAuthPreflight && req.Method == "OPTIONS"
-	return isPreflightRequestAllowed || p.IsWhitelistedPath(req.URL.Path)
+	return isPreflightRequestAllowed || p.IsWhitelistedPath(req.URL.Path) || p.IsWhitelistedIP(req)
 }
 
 // IsWhitelistedPath is used to check if the request path is allowed without auth
@@ -609,12 +613,50 @@ func (p *OAuthProxy) IsWhitelistedPath(path string) bool {
 	return false
 }
 
+func (p *OAuthProxy) IsWhitelistedIP(req *http.Request) bool {
+	if p.bypassIPWhitelist == nil {
+		return false
+	}
+
+	remoteAddr, err := getRealIP(req)
+	if err != nil {
+		logger.Printf("Error obtaining real IP for whitelist: %s", err.Error())
+		// Possibly spoofed X-Real-IP header
+		return false
+	}
+
+	if remoteAddr == nil {
+		return false
+	}
+
+	return p.bypassIPWhitelist.has(*remoteAddr)
+}
+
 func getRemoteAddr(req *http.Request) (s string) {
 	s = req.RemoteAddr
 	if req.Header.Get("X-Real-IP") != "" {
 		s += fmt.Sprintf(" (%q)", req.Header.Get("X-Real-IP"))
 	}
 	return
+}
+
+func getRealIP(req *http.Request) (*net.IP, error) {
+	realIP := req.Header.Get("X-Real-IP")
+	if realIP == "" {
+		return nil, nil
+	}
+
+	host, _, err := net.SplitHostPort(realIP)
+	if err != nil {
+		return nil, err
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil, fmt.Errorf("Unable to parse IP (%s) from X-Real-IP header", realIP)
+	}
+
+	return &ip, nil
 }
 
 func (p *OAuthProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
