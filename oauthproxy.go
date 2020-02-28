@@ -104,6 +104,7 @@ type OAuthProxy struct {
 	skipJwtBearerTokens  bool
 	jwtBearerVerifiers   []*oidc.IDTokenVerifier
 	bypassIPWhitelist    *IPWhitelist
+	realClientIPHeader   string
 	compiledRegex        []*regexp.Regexp
 	templates            *template.Template
 	Banner               string
@@ -301,6 +302,7 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		skipJwtBearerTokens:  opts.SkipJwtBearerTokens,
 		jwtBearerVerifiers:   opts.jwtBearerVerifiers,
 		bypassIPWhitelist:    bypassIPWhitelist,
+		realClientIPHeader:   opts.RealClientIPHeader,
 		compiledRegex:        opts.CompiledRegex,
 		SetXAuthRequest:      opts.SetXAuthRequest,
 		PassBasicAuth:        opts.PassBasicAuth,
@@ -618,10 +620,10 @@ func (p *OAuthProxy) IsWhitelistedIP(req *http.Request) bool {
 		return false
 	}
 
-	remoteAddr, err := getRealIP(req)
+	remoteAddr, err := p.GetRealClientIP(req)
 	if err != nil {
 		logger.Printf("Error obtaining real IP for whitelist: %s", err.Error())
-		// Possibly spoofed X-Real-IP or X-Forwarded-For headers
+		// Possibly spoofed/missing headers?
 		return false
 	}
 
@@ -632,20 +634,15 @@ func (p *OAuthProxy) IsWhitelistedIP(req *http.Request) bool {
 	return p.bypassIPWhitelist.has(*remoteAddr)
 }
 
-func getRemoteAddr(req *http.Request) (s string) {
-	s = req.RemoteAddr
-	if req.Header.Get("X-Real-IP") != "" {
-		s += fmt.Sprintf(" (%q)", req.Header.Get("X-Real-IP"))
-	}
-	return
-}
-
-func getRealIP(req *http.Request) (*net.IP, error) {
+// Returns (nil, nil) if no client IP found matching requirements found (missing header).
+func (p *OAuthProxy) GetRealClientIP(req *http.Request) (*net.IP, error) {
 	var ipStr string
-	if realIP := req.Header.Get("X-Real-IP"); realIP != "" {
-		ipStr = realIP
-	} else if forwardedFor := req.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-		ipStr = forwardedFor
+	if p.realClientIPHeader != "" {
+		if realIP := req.Header.Get(p.realClientIPHeader); realIP != "" {
+			ipStr = realIP
+		} else {
+			return nil, nil
+		}
 	} else {
 		splitIP, _, err := net.SplitHostPort(req.RemoteAddr)
 		if err != nil {
@@ -665,6 +662,16 @@ func getRealIP(req *http.Request) (*net.IP, error) {
 	}
 
 	return &ip, nil
+}
+
+func (p *OAuthProxy) GetRemoteAddr(req *http.Request) (s string) {
+	s = req.RemoteAddr
+	if realClientIP, err := p.GetRealClientIP(req); err == nil {
+		logger.Printf("Unable to get real client IP: %s", err.Error())
+	} else if realClientIP != nil {
+		s += fmt.Sprintf(" (%q)", realClientIP.String())
+	}
+	return
 }
 
 func (p *OAuthProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -765,10 +772,20 @@ func (p *OAuthProxy) OAuthStart(rw http.ResponseWriter, req *http.Request) {
 // OAuthCallback is the OAuth2 authentication flow callback that finishes the
 // OAuth2 authentication flow
 func (p *OAuthProxy) OAuthCallback(rw http.ResponseWriter, req *http.Request) {
-	remoteAddr := getRemoteAddr(req)
+	realClientIP, err := p.GetRealClientIP(req)
+	if err != nil {
+		logger.Printf("Error obtaining real client IP: %s", err.Error())
+	}
+
+	var remoteAddr string
+	if realClientIP != nil {
+		remoteAddr = realClientIP.String()
+	} else {
+		remoteAddr = req.RemoteAddr
+	}
 
 	// finish the oauth cycle
-	err := req.ParseForm()
+	err = req.ParseForm()
 	if err != nil {
 		logger.Printf("Error while parsing OAuth2 callback: %s" + err.Error())
 		p.ErrorPage(rw, 500, "Internal Error", err.Error())
@@ -893,7 +910,18 @@ func (p *OAuthProxy) getAuthenticatedSession(rw http.ResponseWriter, req *http.R
 		}
 	}
 
-	remoteAddr := getRemoteAddr(req)
+	realClientIP, err := p.GetRealClientIP(req)
+	if err != nil {
+		logger.Printf("Error obtaining real client IP: %s", err.Error())
+	}
+
+	var remoteAddr string
+	if realClientIP != nil {
+		remoteAddr = realClientIP.String()
+	} else {
+		remoteAddr = req.RemoteAddr
+	}
+
 	if session == nil {
 		session, err = p.LoadCookiedSession(req)
 		if err != nil {

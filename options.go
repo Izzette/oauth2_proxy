@@ -87,6 +87,7 @@ type Options struct {
 	SkipAuthPreflight             bool          `flag:"skip-auth-preflight" cfg:"skip_auth_preflight" env:"OAUTH2_PROXY_SKIP_AUTH_PREFLIGHT"`
 	FlushInterval                 time.Duration `flag:"flush-interval" cfg:"flush_interval" env:"OAUTH2_PROXY_FLUSH_INTERVAL"`
 	BypassIPWhitelist             []string      `flag:"bypass-ip-whitelist" cfg:"bypass_ip_whitelist" env:"OAUTH2_PROXY_BYPASS_IP_WHITELIST"`
+	RealClientIPHeader            string        `flag:"real-client-ip-header" cfg:"real_client_ip_header" env:"OAUTH2_PROXY_REAL_CLIENT_IP_HEADER"`
 
 	// These options allow for other providers besides Google, with
 	// potential overrides.
@@ -400,6 +401,13 @@ func (o *Options) Validate() error {
 		msgs = append(msgs, whiteListMsgs...)
 		for _, ipNet := range parsedIPNets {
 			o.bypassIPWhitelist = append(o.bypassIPWhitelist, ipNet)
+		}
+	}
+	if o.RealClientIPHeader != "" {
+		if match, err := regexp.MatchString("^[a-zA-Z0-9-]+$", o.RealClientIPHeader); err != nil {
+			msgs = append(msgs, fmt.Sprintf("real_client_ip_header (%s) could not check regex: %s", o.RealClientIPHeader, err.Error()))
+		} else if !match {
+			msgs = append(msgs, fmt.Sprintf("real_client_ip_header (%s) not in valid format", o.RealClientIPHeader))
 		}
 	}
 

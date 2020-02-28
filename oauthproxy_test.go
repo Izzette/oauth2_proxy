@@ -1506,6 +1506,7 @@ func TestIPWhitelist(t *testing.T) {
 		"127.0.0.1",
 		"::1",
 	}
+	opts.RealClientIPHeader = "X-Real-IP"
 	opts.Validate()
 
 	proxy := NewOAuthProxy(opts, func(string) bool { return true })
@@ -1521,7 +1522,7 @@ func TestIPWhitelist(t *testing.T) {
 
 	rw = httptest.NewRecorder()
 	req, _ = http.NewRequest("GET", "/", nil)
-	req.Header.Add("X-Forwarded-For", "::1")
+	req.Header.Add("X-Real-IP", "::1, 127.9.10.1")
 	proxy.ServeHTTP(rw, req)
 	assert.Equal(t, 404, rw.Code)
 
