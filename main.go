@@ -27,6 +27,7 @@ func main() {
 	googleGroups := StringArray{}
 	redisSentinelConnectionURLs := StringArray{}
 	redisClusterConnectionURLs := StringArray{}
+	bypassIPWhitelist := StringArray{}
 
 	config := flagSet.String("config", "", "path to config file")
 	showVersion := flagSet.Bool("version", false, "print version string")
@@ -139,6 +140,7 @@ func main() {
 	flagSet.String("jwt-key-file", "", "path to the private key file in PEM format used to sign the JWT so that you can say something like -jwt-key-file=/etc/ssl/private/jwt_signing_key.pem: required by login.gov")
 	flagSet.String("pubjwk-url", "", "JWK pubkey access endpoint: required by login.gov")
 	flagSet.Bool("gcp-healthchecks", false, "Enable GCP/GKE healthcheck endpoints")
+	flagSet.Var(&bypassIPWhitelist, "bypass-ip-whitelist", "list of IPs or CIDR ranges to allow bypass of oauth2")
 
 	flagSet.Parse(os.Args[1:])
 
